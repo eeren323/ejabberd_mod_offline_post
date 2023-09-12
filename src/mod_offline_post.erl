@@ -11,15 +11,11 @@
   mod_options/1,
   mod_opt_type/1,
   muc_filter_message/5,
-  muc_filter_message/3,
-  offline_message/3,
   offline_message/1
 ]).
 
 -define(PROCNAME, ?MODULE).
 
-%-include("ejabberd.hrl").
-%-include("jlib.hrl").
 -include("xmpp.hrl").
 -include("logger.hrl").
 -include("mod_muc_room.hrl").
@@ -45,23 +41,22 @@ stop(Host) ->
 depends(_Host, _Opts) ->
   [].
 
+mod_opt_type(post_url) -> fun binary_to_list/1;
+mod_opt_type(auth_token) -> fun binary_to_list/1.
+
 mod_options(_Host) ->
-  [post_url, auth_token].
+    [{post_url, undefined},
+     {auth_token, ""}].
 
-mod_opt_type(post_url) -> fun(B) when is_binary(B) -> B end;
-mod_opt_type(auth_token) -> fun(B) when is_binary(B) -> B end;
-mod_opt_type(_) ->
-  [post_url, auth_token].
-
+% Buggy as FromJID and RoomJID are referenced in here. Will determine if it is still needed once tested with muc
 muc_filter_message(Stanza, MUCState, FromNick) ->
-  PostUrl = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, post_url, fun(S) ->
-    iolist_to_binary(S) end, list_to_binary("")),
-  Token = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, auth_token, fun(S) ->
-    iolist_to_binary(S) end, list_to_binary("")),
+  PostUrl = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, post_url),
+  Token = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, auth_token),  
   Type = xmpp:get_type(Stanza),
   BodyTxt = xmpp:get_text(Stanza#message.body),
 
-  ?DEBUG("Receiving offline message type ~s from ~s to ~s with body \"~s\"", [Type, FromJID#jid.luser, RoomJID#jid.luser, BodyTxt]),
+  ?DEBUG("Receiving offline stanza with 3 arguments", []),
+  %?DEBUG("Receiving offline message type ~s from ~s to ~s with body \"~s\"", [Type, FromJID#jid.luser, RoomJID#jid.luser, BodyTxt]),
 
   _LISTUSERS = lists:map(
     fun({_LJID, Info}) ->
@@ -87,25 +82,23 @@ muc_filter_message(Stanza, MUCState, FromNick) ->
       Sep = "&",
       Post = [
         "type=groupchat", Sep,
-        "to=", RoomJID#jid.luser, Sep,
-        "from=", FromJID#jid.luser, Sep,
+        %"to=", RoomJID#jid.luser, Sep,
+        %"from=", FromJID#jid.luser, Sep,
         "offline=", _OFFLINE, Sep,
         "nick=", FromNick, Sep,
         "body=", BodyTxt, Sep,
         "access_token=", Token
       ],
       ?DEBUG("Sending post request to ~s with body \"~s\"", [PostUrl, Post]),
-      httpc:request(post, {binary_to_list(PostUrl), [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], []),
+      httpc:request(post, {PostUrl, [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], []),
       Stanza;
     true ->
       Stanza
   end.
 
 muc_filter_message(Stanza, MUCState, RoomJID, FromJID, FromNick) ->
-  PostUrl = gen_mod:get_module_opt(FromJID#jid.lserver, ?MODULE, post_url, fun(S) ->
-    iolist_to_binary(S) end, list_to_binary("")),
-  Token = gen_mod:get_module_opt(FromJID#jid.lserver, ?MODULE, auth_token, fun(S) ->
-    iolist_to_binary(S) end, list_to_binary("")),
+  PostUrl = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, post_url),
+  Token = gen_mod:get_module_opt(MUCState#state.server_host, ?MODULE, auth_token),	
   Type = xmpp:get_type(Stanza),
   BodyTxt = xmpp:get_text(Stanza#message.body),
 
@@ -143,7 +136,7 @@ muc_filter_message(Stanza, MUCState, RoomJID, FromJID, FromNick) ->
         "access_token=", Token
       ],
       ?DEBUG("Sending post request to ~s with body \"~s\"", [PostUrl, Post]),
-      httpc:request(post, {binary_to_list(PostUrl), [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], []),
+      httpc:request(post, {PostUrl, [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], []),
       Stanza;
     true ->
       Stanza
@@ -151,7 +144,6 @@ muc_filter_message(Stanza, MUCState, RoomJID, FromJID, FromNick) ->
 
 
 offline_message({_Method, Message} = Recv) ->
-%%    ?INFO_MSG("mod_offline_post1 POST: ~p ", [Message]),
   Token = gen_mod:get_module_opt(Message#message.from#jid.lserver, ?MODULE, auth_token),
   PostUrl = gen_mod:get_module_opt(Message#message.from#jid.lserver, ?MODULE, post_url),
   case Message#message.body of
@@ -170,6 +162,6 @@ offline_message({_Method, Message} = Recv) ->
         "access_token=", Token
       ],
       ?DEBUG("Sending post request to ~s with body \"~s\"", [PostUrl, Post]),
-      httpc:request(post, {binary_to_list(PostUrl), [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], [])
+      httpc:request(post, {PostUrl, [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], [])
   end,
   Recv.
