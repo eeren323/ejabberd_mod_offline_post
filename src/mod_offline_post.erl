@@ -156,8 +156,8 @@ offline_message({_Method, Message} = Recv) ->
       Sep = "&",
       Post = [
         "type=chat", Sep,
-        "to=", Message#message.to#jid.luser, Sep,
-        "from=", Message#message.from#jid.luser, Sep,
+        "to=", Message#message.to#jid.luser, "@", Message#message.to#jid.lserver, Sep,
+        "from=", Message#message.from#jid.luser, "@", Message#message.from#jid.lserver, Sep,
         "body=", BodyText, Sep,
         "access_token=", Token
       ],
