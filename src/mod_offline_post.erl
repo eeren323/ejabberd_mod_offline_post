@@ -10,8 +10,9 @@
   depends/2,
   mod_options/1,
   mod_opt_type/1,
-  muc_filter_message/5,
-  offline_message/1
+%  muc_filter_message/5,
+  offline_message/1,
+  offline_post/1
 ]).
 
 -define(PROCNAME, ?MODULE).
@@ -28,13 +29,13 @@ start(Host, Opts) ->
 init(Host, _Opts) ->
   inets:start(),
   ssl:start(),
-  ejabberd_hooks:add(muc_filter_message, Host, ?MODULE, muc_filter_message, 10),
+ % ejabberd_hooks:add(muc_filter_message, Host, ?MODULE, muc_filter_message, 10),
   ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, offline_message, 10),
   ok.
 
 stop(Host) ->
   ?INFO_MSG("Stopping mod_offline_post", []),
-  ejabberd_hooks:delete(muc_filter_message, Host, ?MODULE, muc_filter_message, 10),
+ % ejabberd_hooks:delete(muc_filter_message, Host, ?MODULE, muc_filter_message, 10),
   ejabberd_hooks:delete(offline_message_hook, Host, ?MODULE, offline_message, 10),
   ok.
 
@@ -144,8 +145,20 @@ muc_filter_message(Stanza, MUCState, RoomJID, FromJID, FromNick) ->
 
 
 offline_message({_Method, Message} = Recv) ->
-  Token = gen_mod:get_module_opt(Message#message.from#jid.lserver, ?MODULE, auth_token),
-  PostUrl = gen_mod:get_module_opt(Message#message.from#jid.lserver, ?MODULE, post_url),
+  if 
+    Message#message.type == normal ->
+         [#ps_event{items = OuterItems}] = Message#message.sub_els,
+	 [#ps_item{sub_els = InnerList}] = OuterItems#ps_items.items,
+	 [#message{}] = InnerList,
+	 offline_post(lists:nth(1,InnerList));    %#ps_event.items#ps_items.items)]#ps_item.sub_els)]); 
+    Message#message.type == chat -> 
+         offline_post(Message)
+  end,
+  Recv.
+
+offline_post(Message) ->
+  Token = gen_mod:get_module_opt(Message#message.to#jid.lserver, ?MODULE, auth_token),
+  PostUrl = gen_mod:get_module_opt(Message#message.to#jid.lserver, ?MODULE, post_url),
   case Message#message.body of
     [] -> ok;
     [BodyTxt] ->
@@ -163,5 +176,4 @@ offline_message({_Method, Message} = Recv) ->
       ],
       ?DEBUG("Sending post request to ~s with body \"~s\"", [PostUrl, Post]),
       httpc:request(post, {PostUrl, [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], [])
-  end,
-  Recv.
+  end.
