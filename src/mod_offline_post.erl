@@ -12,7 +12,8 @@
   mod_opt_type/1,
 %  muc_filter_message/5,
   offline_message/1,
-  offline_post/1
+  offline_post/1,
+  offline_post_group/1
 ]).
 
 -define(PROCNAME, ?MODULE).
@@ -150,11 +151,35 @@ offline_message({_Method, Message} = Recv) ->
          [#ps_event{items = OuterItems}] = Message#message.sub_els,
 	 [#ps_item{sub_els = InnerList}] = OuterItems#ps_items.items,
 	 [#message{}] = InnerList,
-	 offline_post(lists:nth(1,InnerList));    %#ps_event.items#ps_items.items)]#ps_item.sub_els)]); 
+	 offline_post_group(lists:nth(1,InnerList));    %#ps_event.items#ps_items.items)]#ps_item.sub_els)]); 
     Message#message.type == chat -> 
          offline_post(Message)
   end,
   Recv.
+
+offline_post_group(Message) ->
+  Token = gen_mod:get_module_opt(Message#message.to#jid.lserver, ?MODULE, auth_token),
+  PostUrl = gen_mod:get_module_opt(Message#message.to#jid.lserver, ?MODULE, post_url),
+  case Message#message.body of
+    [] -> ok;
+    [BodyTxt] ->
+      BodyText = BodyTxt#text.data,
+      MetaJid = maps:get(muc_sender_real_jid, Message#message.meta),
+      ?DEBUG("mod_offline_post1: TOKEN: ~p ", [Token]),
+      ?DEBUG("mod_offline_post1: PostURL: ~p ", [PostUrl]),
+      ?DEBUG("mod_offline_post1: Text: ~p ", [BodyText]),
+      Sep = "&",
+      Post = [
+        "type=groupchat", Sep,
+	"room_id=", Message#message.from#jid.luser, Sep,
+        "to=", Message#message.to#jid.luser, "@", Message#message.to#jid.lserver, Sep,
+        "from=", MetaJid#jid.luser, "@", MetaJid#jid.lserver, Sep,
+        "body=", BodyText, Sep,
+        "access_token=", Token
+      ],
+      ?DEBUG("Sending post request to ~s with body \"~s\"", [PostUrl, Post]),
+      httpc:request(post, {PostUrl, [], "application/x-www-form-urlencoded", list_to_binary(Post)}, [], [])
+  end.
 
 offline_post(Message) ->
   Token = gen_mod:get_module_opt(Message#message.to#jid.lserver, ?MODULE, auth_token),
